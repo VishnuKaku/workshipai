@@ -1,4 +1,4 @@
 node_modules
 dist
 .env
-google-cloud-credentials.json
+src/config/google-cloud-credentials.json
