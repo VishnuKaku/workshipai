@@ -76,14 +76,33 @@ app.use((req, res, next) => {
 // Enhanced Google Cloud credentials setup
 async function setupGoogleCredentials() {
     try {
+        // Check if running in App Runner (production) environment
+        const isProduction = process.env.NODE_ENV === 'production';
+        let credentialsPath;
+
         if (process.env.GOOGLE_CREDENTIALS) {
-            const credentialsPath = path.join(__dirname, 'config', 'temp-credentials.json');
+            // In App Runner, write to /tmp directory
+            // In local development, write to config directory
+            credentialsPath = isProduction 
+                ? path.join('/tmp', 'google-credentials.json')
+                : path.join(__dirname, 'config', 'temp-credentials.json');
+
+            // Create directory if it doesn't exist (for local development)
+            if (!isProduction) {
+                const configDir = path.dirname(credentialsPath);
+                if (!fs.existsSync(configDir)) {
+                    fs.mkdirSync(configDir, { recursive: true });
+                }
+            }
+
+            // Write credentials to file
             fs.writeFileSync(credentialsPath, process.env.GOOGLE_CREDENTIALS);
             process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-            console.log('Google credentials configured from environment variable');
+            console.log(`Google credentials configured from environment variable at: ${credentialsPath}`);
             return;
         }
         
+        // For local development, check for credentials file
         if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
             if (fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
                 console.log('Google credentials configured from local file');

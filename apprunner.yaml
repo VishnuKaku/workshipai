@@ -1,5 +1,4 @@
----
-version: 1
+version: 1.0
 runtime: nodejs18
 build:
   commands:
@@ -8,21 +7,18 @@ build:
       - npm run build
 run:
   command: node dist/index.js
+  network:
+    port: 5000
   env:
     - name: NODE_ENV
       value: production
     - name: MONGO_URI
-      value: mongodb+srv://workshipai:tp8QK9OVT9h9i31T@cluster0.v1rkp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+      value: "mongodb+srv://workshipai:tp8QK9OVT9h9i31T@cluster0.v1rkp.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
     - name: JWT_SECRET
-      value: 22ead3f431e26a39747b143a547d17226ad6c5eb98d2b36cab67a22a38b7437b283b67922742172e98d6133f7b999436b5af949f4dda000c5621b7cf4089e24b
+      value: "22ead3f431e26a39747b143a547d17226ad6c5eb98d2b36cab67a22a38b7437b283b67922742172e98d6133f7b999436b5af949f4dda000c5621b7cf4089e24b"
     - name: PORT
       value: "5000"
     - name: CORS_ORIGIN
-      value: http://test17jan.s3-website-us-east-1.amazonaws.com
+      value: "http://test17jan.s3-website-us-east-1.amazonaws.com"
     - name: GOOGLE_CREDENTIALS
-      value: '{"type":"service_account","project_id":"midyear-acre-447708-v3","private_key_id":"6a2f49216b803134d7a7ced69f3646dd3b997802","private_key":"-----BEGIN
-        PRIVATE
-        KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDTwhrLfItZh0zD\\n6JJejN7zIFM1/bVMjdYaqkQ0Ov7S+UbdvNrLk6vqVdoxU8Xau8zDeze901TlnyVh\\n6NGVG1bSfp1Fbt1uHeLRrLvkx0EU8bTehLfUJlRL+eCnaP0eZFPvNiKfuhpfXTR9\\nlTN6Jcw7fwIjhJw2gJrT276/e8zr7Edt8CdtRh9pUtVg6MJZc/6xcz2SxTAAOnlT\\nzO/1XmMkN5x1P5ab7x18FUZAu6OiEPt9VKz6eekiG3XdDcWO/eV5/xsxJalHSC63\\nb5m0ImJbg7Qn+qXEjvPiUMgW9xILExDxMcS4ugs6bT4tMPmItUrcGtKDIG9uBYAb\\nrWLZhUGFAgMBAAECggEAM1qX7/BQxRIEYmBlGsv0B6c3ttjD3oBpQ4c2SipigRyV\\n/JFfyE4UO5y9cQf9bBnuQxv/PShiptstEC0LoqsCJ8Mv9dY4mgtiZfILkSRnWqJx\\neCNch3USLWi4fDEAbZ3sIw+QXwcdfTIX2DrWRJGlEWqwRJfU4HzYz3czr7Fg1XfD\\nImIDIVV3YN+7tKkwWyRMytLfVa4vP66r2Sa8sdQ4BwVQ5iPlOAlXLFUaKj+JzW6u\\n+jKPmF0tjAAvYpdCfUYemYaHJD42MFq7cmYvgZaqefcmTJfaUWwVFh4Se1QQ9Be6\\nhFnF7dhhaJXv+LdRPeWLq5zg2E2CiRhlG43JBFqjoQKBgQDzYHwD8kb5pBRhXlOf\\n5kNQ35Qdj6+0chOp2IfHwA7+/dzjG/ipERFkHlb2nA3rKr4pziWv0B9ETqchCk1c\\nGPuiO6LUoUBGB9UNBwhEK+vr+w8br2WsiZ6CNUueXDjTSNeHzIdwIrATYVnCRS5z\\nE6MKr16gC3T0QFQuagqM1JiGsQKBgQDevcsHXBfqwZgIOvnBjTumKKmjdEC9XQrA\\nT7cBXViTG0ZwMtML/HYWPuK2pKzh1oRyZV0TM4nxsd39CuQWkI1A/HraPJmWlqnb\\n6ycPTuqnG2bcJD363FXKXfSSK5TaZnFS8PC/JDZbBUbbZ0rfF4QWW51Jv12KfJhP\\nNMZRrhzFFQKBgEXbLN2JHhwrn3nvNDuSQUImWoI9quY1VDWNJDQOiX9haJR7g90r\\nO/2rw7RXSJt2kky3khOrvj3CAbC3H0tPFHMVgQBdJHC1cM6jdRj0Lmx2jHia2Kk0\\nex3OpFzZBaqHnu2opDtoiXeWmsfrSZDYUxUPDy8K+s/c4wzLfSm9H+aRAoGAU8c7\\nODdxX4EVd/MGwcAncWXV+H7fYto+EvtosAC2Mg6OPeE/9EAvAksA5wWlaQRQqN5r\\nVa+K8PefsW+JPtt75beRVch5VGSy2t7lwCJErDnoRGD1VwfM1OLl/JybzlG9yh6J\\nzrsGHtIrRpbhWGv16Jro3DY4LsCSYShOd6Zvd8kCgYEA4e4Q/sN+/3AbHv5P+dyO\\n0ptAM81Mp0SYcsJk9WjXV67VT7SjHhDc/GaVX/VrEhxiZRCpSACMId+g3Fox1neR\\na+YS4+qyNuKUM39ekyOF4zoloJHziKdOKg2dybA+C0Gd7rWVBTXyOZA9OcQezAYD\\nCOBcbehLzYoSDflVVkyzwB4=\\n-----END
-        PRIVATE
-        KEY-----\\n","client_email":"passport-ocr-service@midyear-acre-447708-v3.iam.gserviceaccount.com","client_id":"113976066785749442421","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"https://www.googleapis.com/robot/v1/metadata/x509/passport-ocr-service%40midyear-acre-447708-v3.iam.gserviceaccount.com","universe_domain":"googleapis.com"}'
-  port: 5000
+      value: '{"type":"service_account","project_id":"midyear-acre-447708-v3","private_key_id":"6a2f49216b803134d7a7ced69f3646dd3b997802","private_key":"-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDTwhrLfItZh0zD\\n6JJejN7zIFM1/bVMjdYaqkQ0Ov7S+UbdvNrLk6vqVdoxU8Xau8zDeze901TlnyVh\\n6NGVG1bSfp1Fbt1uHeLRrLvkx0EU8bTehLfUJlRL+eCnaP0eZFPvNiKfuhpfXTR9\\nlTN6Jcw7fwIjhJw2gJrT276/e8zr7Edt8CdtRh9pUtVg6MJZc/6xcz2SxTAAOnlT\\nzO/1XmMkN5x1P5ab7x18FUZAu6OiEPt9VKz6eekiG3XdDcWO/eV5/xsxJalHSC63\\nb5m0ImJbg7Qn+qXEjvPiUMgW9xILExDxMcS4ugs6bT4tMPmItUrcGtKDIG9uBYAb\\nrWLZhUGFAgMBAAECggEAM1qX7/BQxRIEYmBlGsv0B6c3ttjD3oBpQ4c2SipigRyV\\n/JFfyE4UO5y9cQf9bBnuQxv/PShiptstEC0LoqsCJ8Mv9dY4mgtiZfILkSRnWqJx\\neCNch3USLWi4fDEAbZ3sIw+QXwcdfTIX2DrWRJGlEWqwRJfU4HzYz3czr7Fg1XfD\\nImIDIVV3YN+7tKkwWyRMytLfVa4vP66r2Sa8sdQ4BwVQ5iPlOAlXLFUaKj+JzW6u\\n+jKPmF0tjAAvYpdCfUYemYaHJD42MFq7cmYvgZaqefcmTJfaUWwVFh4Se1QQ9Be6\\nhFnF7dhhaJXv+LdRPeWLq5zg2E2CiRhlG43JBFqjoQKBgQDzYHwD8kb5pBRhXlOf\\n5kNQ35Qdj6+0chOp2IfHwA7+/dzjG/ipERFkHlb2nA3rKr4pziWv0B9ETqchCk1c\\nGPuiO6LUoUBGB9UNBwhEK+vr+w8br2WsiZ6CNUueXDjTSNeHzIdwIrATYVnCRS5z\\nE6MKr16gC3T0QFQuagqM1JiGsQKBgQDevcsHXBfqwZgIOvnBjTumKKmjdEC9XQrA\\nT7cBXViTG0ZwMtML/HYWPuK2pKzh1oRyZV0TM4nxsd39CuQWkI1A/HraPJmWlqnb\\n6ycPTuqnG2bcJD363FXKXfSSK5TaZnFS8PC/JDZbBUbbZ0rfF4QWW51Jv12KfJhP\\nNMZRrhzFFQKBgEXbLN2JHhwrn3nvNDuSQUImWoI9quY1VDWNJDQOiX9haJR7g90r\\nO/2rw7RXSJt2kky3khOrvj3CAbC3H0tPFHMVgQBdJHC1cM6jdRj0Lmx2jHia2Kk0\\nex3OpFzZBaqHnu2opDtoiXeWmsfrSZDYUxUPDy8K+s/c4wzLfSm9H+aRAoGAU8c7\\nODdxX4EVd/MGwcAncWXV+H7fYto+EvtosAC2Mg6OPeE/9EAvAksA5wWlaQRQqN5r\\nVa+K8PefsW+JPtt75beRVch5VGSy2t7lwCJErDnoRGD1VwfM1OLl/JybzlG9yh6J\\nzrsGHtIrRpbhWGv16Jro3DY4LsCSYShOd6Zvd8kCgYEA4e4Q/sN+/3AbHv5P+dyO\\n0ptAM81Mp0SYcsJk9WjXV67VT7SjHhDc/GaVX/VrEhxiZRCpSACMId+g3Fox1neR\\na+YS4+qyNuKUM39ekyOF4zoloJHziKdOKg2dybA+C0Gd7rWVBTXyOZA9OcQezAYD\\nCOBcbehLzYoSDflVVkyzwB4=\\n-----END PRIVATE KEY-----\\n","client_email":"passport-ocr-service@midyear-acre-447708-v3.iam.gserviceaccount.com","client_id":"113976066785749442421","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"https://www.googleapis.com/robot/v1/metadata/x509/passport-ocr-service%40midyear-acre-447708-v3.iam.gserviceaccount.com","universe_domain":"googleapis.com"}'
