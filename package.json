@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "npm install && tsc && cp -r src/config dist/config && mkdir -p dist/uploads",
+    "build": "echo 'Starting build process' && npm install && echo 'npm install complete' && tsc && echo 'tsc complete' && mkdir -p dist/uploads && echo 'mkdir command complete'",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
