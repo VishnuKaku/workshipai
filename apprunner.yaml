@@ -6,7 +6,7 @@ build:
       - npm install
       - npm run build
 run:
-  runtime-version: 18.x.x
+  runtime-version: 18
   command: node dist/index.js
   network:
     port: 5000
