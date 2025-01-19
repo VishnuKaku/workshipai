@@ -2,9 +2,15 @@ version: 1.0
 runtime: nodejs18
 build:
   commands:
+    pre-build:
+      - npm install -g typescript
+      - npm install -g ts-node
     build:
-      - npm install
+      - npm ci
       - npm run build
+  env:
+    - name: NODE_ENV
+      value: production
 run:
   command: node dist/index.js
   network:
