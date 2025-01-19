@@ -10,50 +10,93 @@ import fs from 'fs';
 // Load environment variables first
 dotenv.config();
 
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Add health check endpoint for App Runner
+app.get('/health', (req, res) => {
+    res.status(200).send('healthy');
+});
+
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-const app = express();
-const PORT = process.env.PORT || 5000;
+// Ensure config directory exists
+const configDir = path.join(__dirname, 'config');
+if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+}
 
 // Increase payload limits
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Configure CORS based on environment
-const corsOrigin = process.env.NODE_ENV === 'production' 
-    ? process.env.CORS_ORIGIN || '*'  // Use environment variable or allow all in production
-    : 'http://localhost:3000';        // Default development origin
+// Configure CORS with multiple origins
+const allowedOrigins = [
+    'http://localhost:3000',                                    // Local development
+    'http://test17jan.s3-website-us-east-1.amazonaws.com',     // S3 website
+    'https://test17jan.s3-website-us-east-1.amazonaws.com',    // S3 website HTTPS
+    process.env.CORS_ORIGIN                                     // Any additional origin from env
+].filter(Boolean); // Remove undefined/null values
+
+// Add CORS pre-flight
+app.options('*', cors());
 
 app.use(cors({
-    origin: corsOrigin,
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        const isAllowed = allowedOrigins.some(allowedOrigin => 
+            allowedOrigin && (origin === allowedOrigin || origin.endsWith(allowedOrigin.replace('http://', '.').replace('https://', '.')))
+        );
+        
+        if (isAllowed || process.env.NODE_ENV !== 'production') {
+            callback(null, true);
+        } else {
+            console.log(`Blocked origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
 
-// Handle Google Cloud credentials
+// Request logging middleware
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+    next();
+});
+
+// Enhanced Google Cloud credentials setup
 async function setupGoogleCredentials() {
     try {
         if (process.env.GOOGLE_CREDENTIALS) {
-            // If credentials are provided as JSON string in environment variable
-            const credentialsPath = path.join(__dirname, './config/temp-credentials.json');
+            const credentialsPath = path.join(__dirname, 'config', 'temp-credentials.json');
             fs.writeFileSync(credentialsPath, process.env.GOOGLE_CREDENTIALS);
             process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
             console.log('Google credentials configured from environment variable');
-        } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-            // If credentials file path is provided
-            if (!fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
-                throw new Error(`Credentials file not found at: ${process.env.GOOGLE_APPLICATION_CREDENTIALS}`);
-            }
-            console.log('Google credentials configured from file path');
-        } else {
-            throw new Error('No Google credentials configuration found');
+            return;
         }
+        
+        if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+            if (fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+                console.log('Google credentials configured from local file');
+                return;
+            }
+            throw new Error(`Credentials file not found at: ${process.env.GOOGLE_APPLICATION_CREDENTIALS}`);
+        }
+
+        throw new Error('No Google credentials configuration found');
     } catch (err) {
         console.error('Error configuring Google credentials:', err);
-        process.exit(1);
+        // Don't exit process, let App Runner retry
+        throw err;
     }
 }
 
@@ -66,43 +109,71 @@ const connectDB = async () => {
         console.log('MongoDB Connected...');
     } catch (err) {
         console.error("Could not connect to MongoDB:", err);
-        process.exit(1);
+        // Don't exit process, let App Runner retry
+        throw err;
     }
 };
 
 // Initialize application
 async function initializeApp() {
-    try {
-        await setupGoogleCredentials();
-        await connectDB();
+    let retries = 5;
+    while (retries > 0) {
+        try {
+            await setupGoogleCredentials();
+            await connectDB();
 
-        app.use('/api/auth', authRoutes);
-        app.use('/api/passport', passportRoutes);
+            app.use('/api/auth', authRoutes);
+            app.use('/api/passport', passportRoutes);
 
-        app.listen(PORT, () => {
-            console.log(`Server running on port ${PORT}`);
-            console.log('Environment:', process.env.NODE_ENV || 'development');
-        });
-    } catch (err) {
-        console.error('Failed to initialize application:', err);
-        process.exit(1);
+            // Error handling middleware
+            app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+                console.error('Error:', err);
+                res.status(500).json({ error: 'Internal Server Error' });
+            });
+
+            app.listen(PORT, () => {
+                console.log(`Server running on port ${PORT}`);
+                console.log('Environment:', process.env.NODE_ENV || 'development');
+                console.log('Allowed Origins:', allowedOrigins);
+            });
+            
+            return; // Success, exit the retry loop
+        } catch (err) {
+            retries--;
+            console.error(`Failed to initialize application. Retries left: ${retries}`, err);
+            if (retries === 0) {
+                console.error('Max retries reached. Exiting...');
+                process.exit(1);
+            }
+            // Wait for 5 seconds before retrying
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
     }
 }
 
 initializeApp();
 
-// Cleanup temporary credentials file on process exit
-process.on('exit', () => {
-    const tempCredentialsPath = path.join(__dirname, './config/temp-credentials.json');
-    if (fs.existsSync(tempCredentialsPath)) {
-        try {
+// Graceful shutdown handling
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM received. Starting graceful shutdown...');
+    try {
+        // Clean up temporary credentials
+        const tempCredentialsPath = path.join(__dirname, 'config', 'temp-credentials.json');
+        if (fs.existsSync(tempCredentialsPath)) {
             fs.unlinkSync(tempCredentialsPath);
-        } catch (err) {
-            console.error('Error cleaning up temporary credentials file:', err);
         }
+        
+        // Close MongoDB connection
+        await mongoose.connection.close();
+        console.log('Graceful shutdown completed');
+        process.exit(0);
+    } catch (err) {
+        console.error('Error during graceful shutdown:', err);
+        process.exit(1);
     }
 });
 
-// Handle cleanup on unexpected termination
-process.on('SIGINT', () => process.exit());
-process.on('SIGTERM', () => process.exit());
+process.on('SIGINT', () => {
+    console.log('SIGINT received');
+    process.emit('SIGTERM');
+});
