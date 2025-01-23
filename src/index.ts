@@ -7,14 +7,14 @@ import passportRoutes from './routes/passport';
 import cors from 'cors';
 import fs from 'fs';
 
-// Load environment variables first
+/* Load environment variables first
 const dotenvResult = dotenv.config({path: './.env'});
 if(dotenvResult.error){
   console.error('Error loading env variables', dotenvResult.error)
  throw new Error('Failed to load env variable from .env')
 }
 console.log('Env variables loaded successfully')
-console.log('Process.env', process.env);
+console.log('Process.env', process.env);*/
 
 const app = express();
 const PORT = process.env.PORT || 5000;
