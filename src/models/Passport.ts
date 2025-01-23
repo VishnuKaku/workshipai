@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IPassport extends Document {
     Sl_no: string;
@@ -7,6 +7,8 @@ export interface IPassport extends Document {
     Arrival_Departure: string;
     Date: string;
     Description: string;
+    isManualEntry?: boolean;
+    user: Types.ObjectId
 }
 
 const PassportSchema = new Schema({
@@ -15,7 +17,9 @@ const PassportSchema = new Schema({
     Airport_Name_with_location: { type: String, required: true },
     Arrival_Departure: { type: String, required: true },
     Date: { type: String, required: true },
-    Description: { type: String, required: true }
+    Description: { type: String, required: true },
+    isManualEntry: { type: Boolean },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 });
 
 export default mongoose.model<IPassport>('Passport', PassportSchema);
