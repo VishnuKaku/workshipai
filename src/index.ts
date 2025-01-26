@@ -7,14 +7,14 @@ import passportRoutes from './routes/passport';
 import cors from 'cors';
 import fs from 'fs';
 
-/* Load environment variables first
+// Load environment variables first
 const dotenvResult = dotenv.config({path: './.env'});
 if(dotenvResult.error){
   console.error('Error loading env variables', dotenvResult.error)
  throw new Error('Failed to load env variable from .env')
 }
 console.log('Env variables loaded successfully')
-console.log('Process.env', process.env);*/
+console.log('Process.env', process.env);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -156,6 +156,16 @@ async function initializeApp() {
                 res.status(500).json({ error: 'Internal Server Error' });
             });
 
+            // Serve the built React app for any non-API routes
+            const buildPath = path.join(__dirname, '../passport-app-frontend/build'); // Adjust the client/build path according to your project setup
+            app.use(express.static(buildPath));
+
+
+           // Send index.html for all other requests
+            app.get('*', (req, res) => {
+                res.sendFile(path.join(buildPath, 'index.html'));
+            });
+            
             app.listen(PORT, () => {
                 console.log(`Server running on port ${PORT}`);
                 console.log('Environment:', process.env.NODE_ENV || 'development');

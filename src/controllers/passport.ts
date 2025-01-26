@@ -305,7 +305,7 @@ export const updatePassportData = async (
                     Arrival_Departure: entry[3],
                     Date: entry[4],
                     Description: entry[5],
-                    isManualEntry: entry[6] || false,
+                    //isManualEntry: entry[6] || false,
                     user: req.user?._id,
                 });
                 return await passportEntry.save();
