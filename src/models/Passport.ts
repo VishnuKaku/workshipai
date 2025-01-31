@@ -7,7 +7,6 @@ export interface IPassport extends Document {
     Arrival_Departure: string;
     Date: string;
     Description: string;
-    isManualEntry?: boolean;
     user: Types.ObjectId
 }
 
@@ -18,7 +17,6 @@ const PassportSchema = new Schema({
     Arrival_Departure: { type: String, required: true },
     Date: { type: String, required: true },
     Description: { type: String, required: true },
-    isManualEntry: { type: Boolean },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 });
 

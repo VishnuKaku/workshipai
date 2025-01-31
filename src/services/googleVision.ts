@@ -2,7 +2,6 @@
 import { ImageAnnotatorClient } from "@google-cloud/vision";
 import path from "path";
 import dotenv from "dotenv";
-import fs from 'fs';
 
 dotenv.config();
 
