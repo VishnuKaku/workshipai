@@ -259,7 +259,32 @@ const COUNTRY_AIRPORTS: { [key: string]: {
            'Zurich Airport': ['ZRH', 'ZURICH', 'ZÜRICH', 'ZURICH AIRPORT', 'ZÜRICH AIRPORT'],
            'Geneva Airport': ['GVA', 'GENEVA', 'GENÈVE', 'GENEVA AIRPORT', 'GENÈVE AIRPORT']
         }
+    },
+    // New entries for China
+    'CN': {
+        name: 'China',
+        codes: ['CN', 'CHN', 'CHINA'],
+        airports: {
+            'Beijing Capital International Airport': ['PEK', 'BEIJING', 'CAPITAL', 'BEIJING CAPITAL INTERNATIONAL AIRPORT', 'PEK AIRPORT'],
+            'Shanghai Pudong International Airport': ['PVG', 'SHANGHAI', 'PUDONG', 'SHANGHAI PUDONG INTERNATIONAL AIRPORT', 'PVG AIRPORT'],
+            'Guangzhou Baiyun International Airport': ['CAN', 'GUANGZHOU', 'BAIYUN', 'GUANGZHOU BAIYUN INTERNATIONAL AIRPORT', 'CAN AIRPORT']
+        }
+    },
+  // New entries for USA
+    'US': {
+       name: 'United States of America',
+        codes: ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'],
+        airports: {
+             'Hartsfield-Jackson Atlanta International Airport': ['ATL', 'ATLANTA', 'HARTSFIELD-JACKSON', 'HARTSFIELD-JACKSON ATLANTA INTERNATIONAL AIRPORT', 'ATL AIRPORT'],
+             'Los Angeles International Airport': ['LAX', 'LOS ANGELES', 'LAX AIRPORT', 'LOS ANGELES INTERNATIONAL AIRPORT'],
+              'O\'Hare International Airport': ['ORD', 'CHICAGO', 'O\'HARE', 'O\'HARE INTERNATIONAL AIRPORT', 'ORD AIRPORT'],
+             'Dallas/Fort Worth International Airport': ['DFW', 'DALLAS', 'FORT WORTH', 'DALLAS/FORT WORTH INTERNATIONAL AIRPORT', 'DFW AIRPORT'],
+            'Denver International Airport': ['DEN', 'DENVER', 'DENVER INTERNATIONAL AIRPORT', 'DEN AIRPORT'],
+            'John F. Kennedy International Airport': ['JFK', 'NEW YORK', 'KENNEDY', 'JOHN F. KENNEDY INTERNATIONAL AIRPORT', 'JFK AIRPORT']
+
+        }
     }
+
 };
 
 const AIRPORT_KEYWORDS = [
@@ -385,7 +410,20 @@ function detectCountry(text: string): { country: string; confidence: number } {
     'ZURICH': 'Switzerland',
     'ZÜRICH': 'Switzerland',
     'GENEVA': 'Switzerland',
-    'GENÈVE': 'Switzerland'
+    'GENÈVE': 'Switzerland',
+    //Additions for China
+    'BEIJING': 'China',
+    'SHANGHAI': 'China',
+     'GUANGZHOU': 'China',
+    //Additions for USA
+    'ATLANTA': 'United States of America',
+    'LOS ANGELES': 'United States of America',
+    'CHICAGO': 'United States of America',
+    'DALLAS': 'United States of America',
+    'FORT WORTH': 'United States of America',
+    'DENVER': 'United States of America',
+    'NEW YORK': 'United States of America',
+     'KENNEDY': 'United States of America'
 };
 
 
@@ -491,26 +529,67 @@ function defaultAirport(country: string): { airport: string; confidence: number 
     };
 }
 
-function detectStampType(text: string): 'ARRIVAL' | 'DEPARTURE' {
-        const normalizedText = normalizeText(text);
-        
-        const arrivalKeywords = ['ARRIVAL', 'IMMIGRATION IN', 'ENTRY', 'ADMITTED', 'ENTRADA', 'IN', 'ENTRÉE', 'EINREISE'];
-        const departureKeywords = ['DEPARTURE', 'IMMIGRATION OUT', 'EXIT', 'LEFT', 'SALIDA', 'OUT', 'SORTIE', 'AUSREISE', 'DEPARTED'];
+// First update the function signature
+function detectStampType(text: string, blocks: string[]): 'ARRIVAL' | 'DEPARTURE' {
+    const normalizedText = normalizeText(text);
     
-      
-        for(const keyword of departureKeywords){
-            if (normalizedText.includes(keyword)) {
-              return 'DEPARTURE';
+    // Check for explicit text keywords first
+    const arrivalKeywords = ['ARRIVAL', 'IMMIGRATION IN', 'ENTRY', 'ADMITTED', 'ENTRADA', 'IN', 'ENTRÉE', 'EINREISE'];
+    const departureKeywords = ['DEPARTURE', 'IMMIGRATION OUT', 'EXIT', 'LEFT', 'SALIDA', 'OUT', 'SORTIE', 'AUSREISE', 'DEPARTED'];
+
+    // Arrow symbols detection
+    const leftArrowSymbols = ['←', '⇐', '<-', '<='];  // Usually indicates Arrival
+    const rightArrowSymbols = ['→', '⇒', '->', '=>'];  // Usually indicates Departure
+
+     // Check for arrow symbols in combined text
+        for (const symbol of leftArrowSymbols) {
+            if (normalizedText.includes(symbol)) {
+                return 'ARRIVAL';
+            }
+        }
+        for (const symbol of rightArrowSymbols) {
+            if (normalizedText.includes(symbol)) {
+                return 'DEPARTURE';
             }
         }
 
-    for (const keyword of arrivalKeywords) {
-        if(normalizedText.includes(keyword)){
-          return 'ARRIVAL';
+      // Check for arrow-like characters in ASCII art or special formatting
+    const arrowPatterns = {
+        arrival: [/[-=]*>/, /<[-=]*/, /\[?←\]?/, /\[?⇐\]?/],
+        departure: [/<[-=]*/, /[-=]*>/, /\[?→\]?/, /\[?⇒\]?/]
+    };
+
+      for (const block of blocks) {
+        const normalizedBlock = normalizeText(block);
+            // Check for arrow patterns indicating departure
+            for (const pattern of arrowPatterns.departure) {
+                if (pattern.test(normalizedBlock)) {
+                    return 'DEPARTURE';
+                }
+            }
+            // Check for arrow patterns indicating arrival
+            for (const pattern of arrowPatterns.arrival) {
+                if (pattern.test(normalizedBlock)) {
+                    return 'ARRIVAL';
+                }
+            }
+        }
+
+    // If no arrows found, fall back to keyword detection
+      for (const keyword of departureKeywords) {
+        if (normalizedText.includes(keyword)) {
+            return 'DEPARTURE';
         }
     }
 
-   return 'ARRIVAL'
+    for (const keyword of arrivalKeywords) {
+        if (normalizedText.includes(keyword)) {
+            return 'ARRIVAL';
+        }
+    }
+
+    // Default fallback
+    return 'ARRIVAL';
 }
 
 function formatDate(dateStr: string): string {
@@ -584,7 +663,7 @@ function parseStamp(textAnnotations: EntityAnnotation[]): PassportEntry[] {
                 Sl_no: slNo.toString(),
                 Country: countryResult.country,
                 Airport_Name_with_location: airportResult.airport,
-                Arrival_Departure: detectStampType(description),
+                Arrival_Departure: detectStampType(description, blocks),
                  Date: dateMatch? formatDate(block): "",
                Description: description,
               confidence: Math.min(countryResult.confidence, airportResult.confidence),
@@ -639,16 +718,15 @@ export const updatePassportData = async (
     try {
         const modifiedData = req.body;
         console.log('Received modified data:', modifiedData);
-
-        const savedEntries = await Promise.all(
+          const savedEntries = await Promise.all(
             modifiedData.map(async (entry: any) => {
                 const passportEntry = new Passport({
-                    Sl_no: entry[0],
-                    Country: entry[1],
-                    Airport_Name_with_location: entry[2],
-                    Arrival_Departure: entry[3],
-                    Date: entry[4],
-                    Description: entry[5],
+                     Sl_no: entry.Sl_no,
+                    Country: entry.Country.trim(),
+                    Airport_Name_with_location: entry.Airport_Name_with_location.trim(),
+                    Arrival_Departure: entry.Arrival_Departure.trim(),
+                    Date: entry.Date.trim(),
+                    Description: entry.Description.trim(),
                     user: req.user?._id,
                 });
                 return await passportEntry.save();
@@ -664,7 +742,6 @@ export const updatePassportData = async (
         res.status(500).json({ message: 'Failed to save data' });
     }
 };
-
 export const getPassportUserHistory = async (
     req: Request,
     res: Response
