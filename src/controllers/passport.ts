@@ -11,6 +11,7 @@ import { isNil } from '../utils/common';
 import axios from 'axios';
 import { Redis } from 'ioredis';
 import { chunk } from 'lodash';
+import { Image } from 'image-js';
 
 type EntityAnnotation = protos.google.cloud.vision.v1.IEntityAnnotation;
 
@@ -18,6 +19,10 @@ type EntityAnnotation = protos.google.cloud.vision.v1.IEntityAnnotation;
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
+}
+const stampsDir = path.join(uploadsDir, 'stamps');
+if (!fs.existsSync(stampsDir)) {
+    fs.mkdirSync(stampsDir, { recursive: true });
 }
 
 // Configure multer storage
@@ -44,6 +49,12 @@ interface PassportEntry {
     Description: string;
     isManualEntry?: boolean;
     confidence?: number;
+    StampImage?: string; // Add field for stamp image path with uppercase S
+}
+
+interface StampData extends PassportEntry {
+  boundingBox: protos.google.cloud.vision.v1.IBoundingPoly;
+  stampId: string;
 }
 
 // Country and Airport Mappings
@@ -305,7 +316,8 @@ function createEmptyEntry(slNo: string = '1'): PassportEntry {
         Date: '',
         Description: '',
         isManualEntry: true,
-        confidence: 0
+        confidence: 0,
+        StampImage: ''
     };
 }
 
@@ -638,7 +650,7 @@ function formatDate(dateStr: string): string {
     return '';
 }
 
-function parseStamp(textAnnotations: EntityAnnotation[]): PassportEntry[] {
+function parseStamp(textAnnotations: EntityAnnotation[]): StampData[] {
     if (!textAnnotations?.length) {
         return [];
     }
@@ -647,7 +659,7 @@ function parseStamp(textAnnotations: EntityAnnotation[]): PassportEntry[] {
     const blocks = text.split('\n').filter(block => block.trim().length > 0);
     const dateRegex = /(\d{1,2})[.\s/-](\d{1,2}|\w{3})[.\s/-](\d{2,4})/i;
     const dateRegex1 = /DD.MM.YY/;
-    const entries: PassportEntry[] = [];
+    const entries: StampData[] = [];
     let slNo = 1;
     for (let i = 0; i < blocks.length; i++) {
         const block = blocks[i];
@@ -661,7 +673,11 @@ function parseStamp(textAnnotations: EntityAnnotation[]): PassportEntry[] {
                 descriptionBlocks.push(blocks[j]);
             }
             const description = descriptionBlocks.join('\n');
-
+            const boundingBox = textAnnotations[0]?.boundingPoly;
+            if (!boundingBox) {
+                continue; // Skip this entry if boundingBox is not available
+            }
+            const stampId = uuidv4();
             entries.push({
                 Sl_no: slNo.toString(),
                 Country: countryResult.country,
@@ -670,6 +686,8 @@ function parseStamp(textAnnotations: EntityAnnotation[]): PassportEntry[] {
                 Date: dateMatch ? formatDate(block) : "",
                 Description: description,
                 confidence: Math.min(countryResult.confidence, airportResult.confidence),
+                boundingBox,
+                stampId
             });
             slNo++;
         }
@@ -678,53 +696,99 @@ function parseStamp(textAnnotations: EntityAnnotation[]): PassportEntry[] {
     return entries.length > 0 ? entries : [];
 }
 
+// Function to crop and save the stamp image
+async function cropAndSaveStamp(imagePath: string, boundingBox: protos.google.cloud.vision.v1.IBoundingPoly, stampId: string): Promise<string | null> {
+  try {
+      const image = await Image.load(imagePath);
+      if (!boundingBox || !boundingBox.vertices || boundingBox.vertices.length !== 4) {
+           console.error('Invalid bounding box coordinates:', boundingBox);
+          return null;
+       }
+
+       const xCoordinates = boundingBox.vertices.map(v => v.x || 0);
+       const yCoordinates = boundingBox.vertices.map(v => v.y || 0);
+
+       const minX = Math.min(...xCoordinates);
+       const maxX = Math.max(...xCoordinates);
+       const minY = Math.min(...yCoordinates);
+       const maxY = Math.max(...yCoordinates);
+       // Check if coordinates are valid and within the image bounds
+       if (minX < 0 || minY < 0 || maxX > image.width || maxY > image.height || minX >= maxX || minY >= maxY) {
+           console.error('Invalid cropping coordinates:', { minX, maxX, minY, maxY }, 'image dimensions', {width: image.width, height: image.height});
+           return null;
+       }
+
+       const croppedImage = image.crop({ x: minX, y: minY, width: maxX - minX, height: maxY - minY });
+       const stampImagePath = path.join(stampsDir, `${stampId}.jpg`);
+       await croppedImage.save(stampImagePath, { format: 'jpg' });
+       return `/uploads/stamps/${stampId}.jpg`;
+   } catch (error) {
+       console.error('Error cropping and saving image:', error);
+       return null;
+   }
+}
+
 // API Endpoints
 export const uploadPassportPage = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
+   req: Request,
+   res: Response,
+   next: NextFunction
 ): Promise<void> => {
-    try {
-        if (!req.file) {
-            res.status(400).json({
-                message: 'No file uploaded',
-                data: []
-            });
-            return;
-        }
+   try {
+       if (!req.file) {
+           res.status(400).json({
+               message: 'No file uploaded',
+               data: []
+           });
+           return;
+       }
 
-        const imagePath = path.join(uploadsDir, req.file.filename);
+       const imagePath = path.join(uploadsDir, req.file.filename);
 
-        try {
-            const [result] = await visionClient.textDetection(imagePath);
-            const parsedData = parseStamp(result.textAnnotations || []);
-            fs.unlinkSync(imagePath);
-            res.status(200).json(parsedData);
-        } catch (error) {
-            console.error('OCR processing error:', error);
-            if (fs.existsSync(imagePath)) {
-                fs.unlinkSync(imagePath);
-            }
-            res.status(200).json([]);
-        }
-    } catch (error) {
-        console.error('Upload error:', error);
-        res.status(200).json([]);
-    }
+       try {
+           const [result] = await visionClient.textDetection(imagePath);
+           const parsedStamps = parseStamp(result.textAnnotations || []);
+           const passportEntries: PassportEntry[] = [];
+           for (const stampData of parsedStamps) {
+                const stampImagePath = await cropAndSaveStamp(imagePath, stampData.boundingBox, stampData.stampId);
+                 passportEntries.push({
+                      ...stampData,
+                      StampImage: stampImagePath || '',
+                 });
+           }
+           fs.unlinkSync(imagePath);
+          res.status(200).json(passportEntries);
+
+       } catch (error) {
+           console.error('OCR processing error:', error);
+           if (fs.existsSync(imagePath)) {
+               fs.unlinkSync(imagePath);
+           }
+           res.status(200).json([]);
+       }
+   } catch (error) {
+       console.error('Upload error:', error);
+       res.status(200).json([]);
+   }
 };
 
 export const updatePassportData = async (
     req: Request,
     res: Response,
     next: NextFunction
-): Promise<void> => {
+ ): Promise<void> => {
     try {
         const modifiedData = req.body;
         console.log('Received modified data:', modifiedData);
+        
         const savedEntries = await Promise.all(
             modifiedData.map(async (entry: any) => {
+                // Keep the original StampImage path if it exists
+                const stampImagePath = entry.StampImage || '';
+                
                 const passportEntry = new Passport({
                     Sl_no: entry.Sl_no,
+                    StampImage: stampImagePath, // Save the original path
                     Country: entry.Country.trim(),
                     Airport_Name_with_location: entry.Airport_Name_with_location.trim(),
                     Arrival_Departure: entry.Arrival_Departure.trim(),
@@ -732,10 +796,16 @@ export const updatePassportData = async (
                     Description: entry.Description.trim(),
                     user: req.user?._id,
                 });
+                
+                console.log("Saving passport entry with image:", {
+                    ...passportEntry.toObject(),
+                    StampImage: stampImagePath
+                });
+                
                 return await passportEntry.save();
             })
         );
-
+ 
         res.status(200).json({
             message: 'Data saved successfully',
             data: savedEntries,
@@ -744,208 +814,8 @@ export const updatePassportData = async (
         console.error('Error saving data:', error);
         res.status(500).json({ message: 'Failed to save data' });
     }
-};
+ };
 export const getPassportUserHistory = async (
-    req: Request,
-    res: Response
-): Promise<void> => {
-    try {
-        const userId = req.user?._id;
-
-        if (isNil(userId)) {
-            res.status(401).json({ message: 'Unauthorized: User ID not found in request' });
-            return;
-        }
-
-        const passportEntries = await Passport.find({ user: userId }).sort({ Date: 1 });
-
-        if (!passportEntries || passportEntries.length === 0) {
-            res.status(404).json({ message: 'Passport data not found for this user.' });
-            return;
-        }
-
-        res.status(200).json({ data: passportEntries });
-    } catch (error: any) {
-        console.error('Error getting user passport history:', error);
-        res.status(500).json({ message: 'Internal Server Error', error: error.message });
-    }
-};
-
-interface GeocodingResult {
-    lat: number;
-    lng: number;
-}
-
-interface LocationIQResponse {
-    lat: string;
-    lon: string;
-}
-
-class GeocodingService {
-    private static instance: GeocodingService;
-    private pendingRequests: Map<string, ((value: GeocodingResult | null) => void)[]>;
-    private memoryCache: Map<string, GeocodingResult>;
-    private redis?: Redis;
-    private requestQueue: string[];
-    private isProcessingQueue: boolean;
-
-    private constructor() {
-        this.pendingRequests = new Map();
-        this.memoryCache = new Map();
-        this.requestQueue = [];
-        this.isProcessingQueue = false;
-
-        // Initialize Redis if REDIS_URL is available
-        if (process.env.REDIS_URL) {
-            this.redis = new Redis(process.env.REDIS_URL);
-        }
-    }
-
-    public static getInstance(): GeocodingService {
-        if (!GeocodingService.instance) {
-            GeocodingService.instance = new GeocodingService();
-        }
-        return GeocodingService.instance;
-    }
-
-    private async checkCache(key: string): Promise<GeocodingResult | null> {
-        // Check memory cache first
-        if (this.memoryCache.has(key)) {
-            console.log(`Using memory cache for: ${key}`);
-            return this.memoryCache.get(key)!;
-        }
-
-        // Check Redis cache if available
-        if (this.redis) {
-            const cached = await this.redis.get(`geocode:${key}`);
-            if (cached) {
-                console.log(`Using Redis cache for: ${key}`);
-                const result = JSON.parse(cached);
-                this.memoryCache.set(key, result);
-                return result;
-            }
-        }
-
-        return null;
-    }
-
-    private async setCache(key: string, value: GeocodingResult): Promise<void> {
-        // Set memory cache
-        this.memoryCache.set(key, value);
-
-        // Set Redis cache if available
-        if (this.redis) {
-            await this.redis.set(
-                `geocode:${key}`,
-                JSON.stringify(value),
-                'EX',
-                60 * 60 * 24 * 30 // 30 days expiration
-            );
-        }
-    }
-
-    private async geocodeWithRetry(
-        airportName: string,
-        retries = 3,
-        initialDelay = 1000
-    ): Promise<GeocodingResult | null> {
-        const apiKey = process.env.LOCATIONIQ_API_KEY;
-        const url = `https://us1.locationiq.com/v1/search.php?key=${apiKey}&q=${encodeURIComponent(airportName)}&format=json`;
-
-        let delay = initialDelay;
-
-        for (let attempt = 0; attempt < retries; attempt++) {
-            try {
-                const response = await axios.get<LocationIQResponse[]>(url);
-                const data = response.data;
-
-                if (data && data.length > 0) {
-                    const result = {
-                        lat: parseFloat(data[0].lat),
-                        lng: parseFloat(data[0].lon)
-                    };
-                    await this.setCache(airportName, result);
-                    console.log(`Geocoded and cached: ${airportName}`);
-                    return result;
-                }
-                return null;
-            } catch (error: any) {
-                if (error.response?.status === 429 && attempt < retries - 1) {
-                    console.warn(`Rate limit hit for: ${airportName}. Retrying in ${delay}ms...`);
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    delay *= 2; // Exponential backoff
-                    continue;
-                }
-                console.error(`Failed to geocode airport after retries: ${airportName}`, error.message);
-                return null; // Return null instead of throwing
-            }
-        }
-        return null;
-    }
-
-    // Updated processQueue method in GeocodingService class
-    private async processQueue(): Promise<void> {
-        if (this.isProcessingQueue) return;
-
-        this.isProcessingQueue = true;
-        const BATCH_SIZE = 5;
-        const BATCH_DELAY = 1000;
-
-        try {
-            while (this.requestQueue.length > 0) {
-                const batch = this.requestQueue.splice(0, BATCH_SIZE);
-                const promises = batch.map(airportName => this.geocodeWithRetry(airportName));
-                const results = await Promise.all(promises);
-
-                results.forEach((result, index) => {
-                    const airportName = batch[index];
-                    const pendingResolves = this.pendingRequests.get(airportName);
-                    if (pendingResolves) {
-                        pendingResolves.forEach(resolve => resolve(result));
-                        this.pendingRequests.delete(airportName);
-                    }
-                });
-
-                // Delay between batches if more items remain
-                if (this.requestQueue.length > 0) {
-                    await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
-                }
-            }
-        } finally {
-            this.isProcessingQueue = false;
-            // Check if new requests came in while processing
-            if (this.requestQueue.length > 0) {
-                this.processQueue();
-            }
-        }
-    }
-
-    public async geocodeAirport(airportName: string): Promise<GeocodingResult | null> {
-        const cached = await this.checkCache(airportName);
-        if (cached) return cached;
-
-        if (this.pendingRequests.has(airportName)) {
-            return new Promise(resolve => {
-                this.pendingRequests.get(airportName)?.push(resolve);
-            });
-        }
-
-        const promise = new Promise<GeocodingResult | null>((resolve) => {
-            this.pendingRequests.set(airportName, [resolve]);
-        });
-
-        this.requestQueue.push(airportName);
-        this.processQueue(); // Ensure queue processing is triggered
-        return promise;
-    }
-
-    public async batchGeocode(airportNames: string[]): Promise<(GeocodingResult | null)[]> {
-        return Promise.all(airportNames.map(name => this.geocodeAirport(name)));
-    }
-}
-
-// Updated controller function
-export const getPassportUserHistoryForMap = async (
     req: Request,
     res: Response
 ): Promise<void> => {
@@ -955,26 +825,222 @@ export const getPassportUserHistoryForMap = async (
             res.status(401).json({ message: 'Unauthorized: User ID not found in request' });
             return;
         }
-
         const passportEntries = await Passport.find({ user: userId }).sort({ Date: 1 });
-
-        if (!passportEntries?.length) {
+        if (!passportEntries || passportEntries.length === 0) {
             res.status(404).json({ message: 'Passport data not found for this user.' });
             return;
         }
-
-        const geocodingService = GeocodingService.getInstance();
-        const airportNames = passportEntries.map(entry => entry.Airport_Name_with_location);
-        const coordinates = await geocodingService.batchGeocode(airportNames);
-
-        const geocodedData = passportEntries.map((entry, index) => ({
-            ...entry.toObject(),
-            coordinates: coordinates[index] || { lat: 0, lng: 0 }
-        }));
-
-        res.status(200).json({ data: geocodedData });
+        res.status(200).json({ data: passportEntries });
     } catch (error: any) {
-        console.error('Error getting user passport history for map:', error);
+        console.error('Error getting user passport history:', error);
         res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
+};
+
+interface GeocodingResult {
+   lat: number;
+   lng: number;
+}
+
+interface LocationIQResponse {
+   lat: string;
+   lon: string;
+}
+
+class GeocodingService {
+   private static instance: GeocodingService;
+   private pendingRequests: Map<string, ((value: GeocodingResult | null) => void)[]>;
+   private memoryCache: Map<string, GeocodingResult>;
+   private redis?: Redis;
+   private requestQueue: string[];
+   private isProcessingQueue: boolean;
+
+   private constructor() {
+       this.pendingRequests = new Map();
+       this.memoryCache = new Map();
+       this.requestQueue = [];
+       this.isProcessingQueue = false;
+
+       // Initialize Redis if REDIS_URL is available
+       if (process.env.REDIS_URL) {
+           this.redis = new Redis(process.env.REDIS_URL);
+       }
+   }
+
+   public static getInstance(): GeocodingService {
+       if (!GeocodingService.instance) {
+           GeocodingService.instance = new GeocodingService();
+       }
+       return GeocodingService.instance;
+   }
+
+   private async checkCache(key: string): Promise<GeocodingResult | null> {
+       // Check memory cache first
+       if (this.memoryCache.has(key)) {
+           console.log(`Using memory cache for: ${key}`);
+           return this.memoryCache.get(key)!;
+       }
+
+       // Check Redis cache if available
+       if (this.redis) {
+           const cached = await this.redis.get(`geocode:${key}`);
+           if (cached) {
+               console.log(`Using Redis cache for: ${key}`);
+               const result = JSON.parse(cached);
+               this.memoryCache.set(key, result);
+               return result;
+           }
+       }
+
+       return null;
+   }
+
+   private async setCache(key: string, value: GeocodingResult): Promise<void> {
+       // Set memory cache
+       this.memoryCache.set(key, value);
+
+       // Set Redis cache if available
+       if (this.redis) {
+           await this.redis.set(
+               `geocode:${key}`,
+               JSON.stringify(value),
+               'EX',
+               60 * 60 * 24 * 30 // 30 days expiration
+           );
+       }
+   }
+
+   private async geocodeWithRetry(
+       airportName: string,
+       retries = 3,
+       initialDelay = 1000
+   ): Promise<GeocodingResult | null> {
+       const apiKey = process.env.LOCATIONIQ_API_KEY;
+       const url = `https://us1.locationiq.com/v1/search.php?key=${apiKey}&q=${encodeURIComponent(airportName)}&format=json`;
+
+       let delay = initialDelay;
+
+       for (let attempt = 0; attempt < retries; attempt++) {
+           try {
+               const response = await axios.get<LocationIQResponse[]>(url);
+               const data = response.data;
+
+               if (data && data.length > 0) {
+                   const result = {
+                       lat: parseFloat(data[0].lat),
+                       lng: parseFloat(data[0].lon)
+                   };
+                   await this.setCache(airportName, result);
+                   console.log(`Geocoded and cached: ${airportName}`);
+                   return result;
+               }
+               return null;
+           } catch (error: any) {
+               if (error.response?.status === 429 && attempt < retries - 1) {
+                   console.warn(`Rate limit hit for: ${airportName}. Retrying in ${delay}ms...`);
+                   await new Promise(resolve => setTimeout(resolve, delay));
+                   delay *= 2; // Exponential backoff
+                   continue;
+               }
+               console.error(`Failed to geocode airport after retries: ${airportName}`, error.message);
+               return null; // Return null instead of throwing
+           }
+       }
+       return null;
+   }
+
+   // Updated processQueue method in GeocodingService class
+   private async processQueue(): Promise<void> {
+       if (this.isProcessingQueue) return;
+
+       this.isProcessingQueue = true;
+       const BATCH_SIZE = 5;
+       const BATCH_DELAY = 1000;
+
+       try {
+           while (this.requestQueue.length > 0) {
+               const batch = this.requestQueue.splice(0, BATCH_SIZE);
+               const promises = batch.map(airportName => this.geocodeWithRetry(airportName));
+               const results = await Promise.all(promises);
+
+               results.forEach((result, index) => {
+                   const airportName = batch[index];
+                   const pendingResolves = this.pendingRequests.get(airportName);
+                   if (pendingResolves) {
+                       pendingResolves.forEach(resolve => resolve(result));
+                       this.pendingRequests.delete(airportName);
+                   }
+               });
+
+               // Delay between batches if more items remain
+               if (this.requestQueue.length > 0) {
+                   await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+               }
+           }
+       } finally {
+           this.isProcessingQueue = false;
+           // Check if new requests came in while processing
+           if (this.requestQueue.length > 0) {
+               this.processQueue();
+           }
+       }
+   }
+
+   public async geocodeAirport(airportName: string): Promise<GeocodingResult | null> {
+       const cached = await this.checkCache(airportName);
+       if (cached) return cached;
+
+       if (this.pendingRequests.has(airportName)) {
+           return new Promise(resolve => {
+               this.pendingRequests.get(airportName)?.push(resolve);
+           });
+       }
+
+       const promise = new Promise<GeocodingResult | null>((resolve) => {
+           this.pendingRequests.set(airportName, [resolve]);
+       });
+
+       this.requestQueue.push(airportName);
+       this.processQueue(); // Ensure queue processing is triggered
+       return promise;
+   }
+
+   public async batchGeocode(airportNames: string[]): Promise<(GeocodingResult | null)[]> {
+       return Promise.all(airportNames.map(name => this.geocodeAirport(name)));
+   }
+}
+
+// Updated controller function
+export const getPassportUserHistoryForMap = async (
+   req: Request,
+   res: Response
+): Promise<void> => {
+   try {
+       const userId = req.user?._id;
+       if (!userId) {
+           res.status(401).json({ message: 'Unauthorized: User ID not found in request' });
+           return;
+       }
+
+       const passportEntries = await Passport.find({ user: userId }).sort({ Date: 1 });
+
+       if (!passportEntries?.length) {
+           res.status(404).json({ message: 'Passport data not found for this user.' });
+           return;
+       }
+
+       const geocodingService = GeocodingService.getInstance();
+       const airportNames = passportEntries.map(entry => entry.Airport_Name_with_location);
+       const coordinates = await geocodingService.batchGeocode(airportNames);
+
+       const geocodedData = passportEntries.map((entry, index) => ({
+           ...entry.toObject(),
+           coordinates: coordinates[index] || { lat: 0, lng: 0 }
+       }));
+
+       res.status(200).json({ data: geocodedData });
+   } catch (error: any) {
+       console.error('Error getting user passport history for map:', error);
+       res.status(500).json({ message: 'Internal Server Error', error: error.message });
+   }
 };
