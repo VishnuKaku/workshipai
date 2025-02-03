@@ -698,34 +698,55 @@ function parseStamp(textAnnotations: EntityAnnotation[]): StampData[] {
 
 // Function to crop and save the stamp image
 async function cropAndSaveStamp(imagePath: string, boundingBox: protos.google.cloud.vision.v1.IBoundingPoly, stampId: string): Promise<string | null> {
-  try {
-      const image = await Image.load(imagePath);
-      if (!boundingBox || !boundingBox.vertices || boundingBox.vertices.length !== 4) {
-           console.error('Invalid bounding box coordinates:', boundingBox);
-          return null;
-       }
+    try {
+        const image = await Image.load(imagePath);
+        if (!boundingBox || !boundingBox.vertices || boundingBox.vertices.length !== 4) {
+            console.error('Invalid bounding box coordinates:', boundingBox);
+            return null;
+        }
 
-       const xCoordinates = boundingBox.vertices.map(v => v.x || 0);
-       const yCoordinates = boundingBox.vertices.map(v => v.y || 0);
+        // Add padding percentage (15%)
+        const paddingPercent = 0.15;
 
-       const minX = Math.min(...xCoordinates);
-       const maxX = Math.max(...xCoordinates);
-       const minY = Math.min(...yCoordinates);
-       const maxY = Math.max(...yCoordinates);
-       // Check if coordinates are valid and within the image bounds
-       if (minX < 0 || minY < 0 || maxX > image.width || maxY > image.height || minX >= maxX || minY >= maxY) {
-           console.error('Invalid cropping coordinates:', { minX, maxX, minY, maxY }, 'image dimensions', {width: image.width, height: image.height});
-           return null;
-       }
+        const xCoordinates = boundingBox.vertices.map(v => v.x || 0);
+        const yCoordinates = boundingBox.vertices.map(v => v.y || 0);
 
-       const croppedImage = image.crop({ x: minX, y: minY, width: maxX - minX, height: maxY - minY });
-       const stampImagePath = path.join(stampsDir, `${stampId}.jpg`);
-       await croppedImage.save(stampImagePath, { format: 'jpg' });
-       return `/uploads/stamps/${stampId}.jpg`;
-   } catch (error) {
-       console.error('Error cropping and saving image:', error);
-       return null;
-   }
+        let minX = Math.min(...xCoordinates);
+        let maxX = Math.max(...xCoordinates);
+        let minY = Math.min(...yCoordinates);
+        let maxY = Math.max(...yCoordinates);
+
+        // Calculate padding values
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const paddingX = width * paddingPercent;
+        const paddingY = height * paddingPercent;
+
+        // Apply padding
+        minX = Math.max(0, minX - paddingX);
+        maxX = Math.min(image.width, maxX + paddingX);
+        minY = Math.max(0, minY - paddingY);
+        maxY = Math.min(image.height, maxY + paddingY);
+
+        if (minX >= maxX || minY >= maxY) {
+            console.error('Invalid cropping coordinates after padding:', { minX, maxX, minY, maxY });
+            return null;
+        }
+
+        const croppedImage = image.crop({ 
+            x: Math.floor(minX), 
+            y: Math.floor(minY), 
+            width: Math.ceil(maxX - minX), 
+            height: Math.ceil(maxY - minY) 
+        });
+        
+        const stampImagePath = path.join(stampsDir, `${stampId}.jpg`);
+        await croppedImage.save(stampImagePath, { format: 'jpg' });
+        return `/uploads/stamps/${stampId}.jpg`;
+    } catch (error) {
+        console.error('Error cropping and saving image:', error);
+        return null;
+    }
 }
 
 // API Endpoints
