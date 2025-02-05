@@ -1065,3 +1065,28 @@ export const getPassportUserHistoryForMap = async (
        res.status(500).json({ message: 'Internal Server Error', error: error.message });
    }
 };
+
+// In your backend controller file (e.g., passportController.ts)
+export const getUniqueStampImages = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const userId = req.user?._id;
+        if (!userId) {
+            res.status(401).json({ message: 'Unauthorized: User ID not found in request' });
+            return;
+        }
+
+        // Fetch unique stamp images for the user
+        const uniqueStamps = await Passport.distinct('StampImage', { user: userId });
+
+        // Filter out null or undefined values
+        const filteredStamps = uniqueStamps.filter(stamp => !!stamp);
+
+        res.status(200).json({ data: filteredStamps });
+    } catch (error: any) {
+        console.error('Error fetching unique stamp images:', error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+};
