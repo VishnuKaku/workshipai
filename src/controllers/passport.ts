@@ -98,7 +98,7 @@ const COUNTRY_AIRPORTS: {
         name: 'France',
         codes: ['FR', 'FRA', 'FRANCE'],
         airports: {
-            'PARIS Airport': ['ROISSY', 'PARIS CDG', 'CDG AIRPORT', 'CHARLES DE GAULLE AIRPORT', 'ROISSY AIRPORT'],
+            'Paris Airport': ['ROISSY', 'PARIS CDG', 'CDG AIRPORT', 'CHARLES DE GAULLE AIRPORT', 'ROISSY AIRPORT'],
             'Orly Airport': ['PARIS ORLY', 'ORY AIRPORT', 'PARIS ORLY AIRPORT']
         }
     },
