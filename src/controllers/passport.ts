@@ -7,10 +7,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { protos } from '@google-cloud/vision';
 import { parse, format, isValid } from 'date-fns';
 import Passport from '../models/Passport';
-import { isNil } from '../utils/common';
 import axios from 'axios';
 import { Redis } from 'ioredis';
-import { chunk } from 'lodash';
 import { Image } from 'image-js';
 
 type EntityAnnotation = protos.google.cloud.vision.v1.IEntityAnnotation;
@@ -69,9 +67,9 @@ const COUNTRY_AIRPORTS: {
         name: 'Croatia',
         codes: ['HR', 'HRV', 'CROATIA', 'HR:'],
         airports: {
-            'Split Airport': ['SPLIT', 'SPU', 'A 008', 'A008', 'SPLIT AIRPORT', 'SPU AIRPORT'],
+            'Split Airport': ['SPLIT', 'A 008', 'A008', 'SPLIT AIRPORT'],
             'Zagreb Airport': ['ZAGREB', 'ZAG', 'ZAGREB AIRPORT'],
-            'Dubrovnik Airport': ['DUBROVNIK', 'DBV', 'DUBROVNIK AIRPORT'],
+            'Dubrovnik Airport': ['DUBROVNIK', 'DUBROVNIK AIRPORT'],
             'Zadar Airport': ['ZADAR', 'ZAD', 'ZADAR AIRPORT']
         }
     },
@@ -79,223 +77,221 @@ const COUNTRY_AIRPORTS: {
         name: 'Austria',
         codes: ['AT', 'AUT', 'AUSTRIA'],
         airports: {
-            'Vienna International Airport': ['VIE', 'WIEN', 'VIENNA', 'VIE AIRPORT', 'VIENNA INTERNATIONAL AIRPORT']
+            'Vienna International Airport': ['WIEN', 'VIENNA', 'VIE AIRPORT', 'VIENNA INTERNATIONAL AIRPORT']
         }
     },
     'BE': {
         name: 'Belgium',
         codes: ['BE', 'BEL', 'BELGIUM'],
         airports: {
-            'Brussels Airport': ['BRU', 'BRUSSELS', 'ZAVENTEM', 'BRUSSELS AIRPORT', 'ZAVENTEM AIRPORT']
+            'Brussels Airport': ['BRUSSELS', 'ZAVENTEM', 'BRUSSELS AIRPORT', 'ZAVENTEM AIRPORT']
         }
     },
     'DK': {
         name: 'Denmark',
         codes: ['DK', 'DNK', 'DENMARK'],
         airports: {
-            'Copenhagen Airport': ['CPH', 'KØBENHAVN', 'KOBENHAVN', 'KASTRUP', 'CPH AIRPORT', 'KØBENHAVN AIRPORT', 'KASTRUP AIRPORT']
+            'Copenhagen Airport': ['KØBENHAVN', 'KOBENHAVN', 'KASTRUP', 'CPH AIRPORT', 'KØBENHAVN AIRPORT', 'KASTRUP AIRPORT']
         }
     },
     'FR': {
         name: 'France',
         codes: ['FR', 'FRA', 'FRANCE'],
         airports: {
-            'Charles de Gaulle Airport': ['CDG', 'ROISSY', 'PARIS CDG', 'CDG AIRPORT', 'CHARLES DE GAULLE AIRPORT', 'ROISSY AIRPORT'],
-            'Orly Airport': ['ORY', 'PARIS ORLY', 'ORY AIRPORT', 'PARIS ORLY AIRPORT']
+            'PARIS Airport': ['ROISSY', 'PARIS CDG', 'CDG AIRPORT', 'CHARLES DE GAULLE AIRPORT', 'ROISSY AIRPORT'],
+            'Orly Airport': ['PARIS ORLY', 'ORY AIRPORT', 'PARIS ORLY AIRPORT']
         }
     },
     'DE': {
         name: 'Germany',
         codes: ['DE', 'DEU', 'GERMANY'],
         airports: {
-            'Frankfurt Airport': ['FRA', 'FRANKFURT', 'FRA AIRPORT', 'FRANKFURT AIRPORT'],
-            'Munich Airport': ['MUC', 'MÜNCHEN', 'MUNICH', 'MUC AIRPORT', 'MÜNCHEN AIRPORT', 'MUNICH AIRPORT']
+            'Frankfurt Airport': ['FRANKFURT','FRANKFURT AIRPORT'],
+            'Munich Airport': ['MÜNCHEN', 'MUNICH', 'MÜNCHEN AIRPORT', 'MUNICH AIRPORT']
         }
     },
     'IT': {
         name: 'Italy',
         codes: ['IT', 'ITA', 'ITALY'],
         airports: {
-            'Rome Fiumicino Airport': ['FCO', 'ROMA', 'ROME', 'FIUMICINO', 'FCO AIRPORT', 'ROME FIUMICINO AIRPORT', 'FIUMICINO AIRPORT'],
-            'Milan Malpensa Airport': ['MXP', 'MILANO', 'MILAN', 'MALPENSA', 'MXP AIRPORT', 'MILAN MALPENSA AIRPORT', 'MALPENSA AIRPORT']
+            'RomeFiumicino Airport': ['ROMA', 'ROME', 'FIUMICINO', 'ROME FIUMICINO AIRPORT', 'FIUMICINO AIRPORT'],
+            'MilanMalpensa Airport': ['MILANO', 'MILAN', 'MALPENSA','MILAN MALPENSA AIRPORT', 'MALPENSA AIRPORT']
         }
     },
     'NL': {
         name: 'Netherlands',
         codes: ['NL', 'NLD', 'NETHERLANDS'],
         airports: {
-            'Amsterdam Airport Schiphol': ['AMS', 'SCHIPHOL', 'AMSTERDAM', 'AMS AIRPORT', 'AMSTERDAM AIRPORT SCHIPHOL', 'SCHIPHOL AIRPORT']
+            'Amsterdam Airport Schiphol': ['SCHIPHOL', 'AMSTERDAM', 'AMSTERDAM AIRPORT SCHIPHOL', 'SCHIPHOL AIRPORT']
         }
     },
     'ES': {
         name: 'Spain',
         codes: ['ES', 'ESP', 'SPAIN'],
         airports: {
-            'Madrid Barajas Airport': ['MAD', 'MADRID', 'BARAJAS', 'MAD AIRPORT', 'MADRID BARAJAS AIRPORT', 'BARAJAS AIRPORT'],
-            'Barcelona El Prat Airport': ['BCN', 'BARCELONA', 'EL PRAT', 'BCN AIRPORT', 'BARCELONA EL PRAT AIRPORT', 'EL PRAT AIRPORT']
+            'Madrid Airport': ['MADRID', 'BARAJAS','MADRID BARAJAS AIRPORT', 'BARAJAS AIRPORT'],
+            'Barcelona Airport': ['BARCELONA', 'EL PRAT','BARCELONA EL PRAT AIRPORT', 'EL PRAT AIRPORT']
         }
     },
     'IN': {
         name: 'India',
         codes: ['IN', 'IND', 'INDIA'],
         airports: {
-            'Indira Gandhi International Airport': ['DEL', 'DELHI', 'IGI', 'NEW DELHI', 'DEL AIRPORT', 'DELHI AIRPORT', 'IGI AIRPORT', 'NEW DELHI AIRPORT', 'INDIRA GANDHI INTERNATIONAL AIRPORT'],
-            'Chhatrapati Shivaji International Airport': ['BOM', 'MUMBAI', 'CSMI', 'SAHAR', 'BOM AIRPORT', 'MUMBAI AIRPORT', 'CSMI AIRPORT', 'SAHAR AIRPORT', 'CHHATRAPATI SHIVAJI INTERNATIONAL AIRPORT'],
-            'Kempegowda International Airport': ['BLR', 'BANGALORE', 'BENGALURU', 'BLR AIRPORT', 'BANGALORE AIRPORT', 'BENGALURU AIRPORT', 'KEMPEGOWDA INTERNATIONAL AIRPORT'],
-            'Chennai International Airport': ['MAA', 'CHENNAI', 'MADRAS', 'MAA AIRPORT', 'CHENNAI AIRPORT', 'MADRAS AIRPORT', 'CHENNAI INTERNATIONAL AIRPORT']
+            'Delhi International Airport': ['DELHI','NEWDELHI','DELHI AIRPORT', 'NEWDELHI AIRPORT', 'INDIRA GANDHI INTERNATIONAL AIRPORT'],
+            'Mumbai Airport': ['MUMBAI',  'SAHAR', 'SAHAR AIRPORT', 'CHHATRAPATI SHIVAJI INTERNATIONAL AIRPORT'],
+            'Bangalore International Airport': ['BANGALORE', 'BENGALURU','BANGALORE AIRPORT', 'BENGALURU AIRPORT', 'KEMPEGOWDA INTERNATIONAL AIRPORT'],
+            'Chennai International Airport': ['CHENNAI', 'MADRAS','CHENNAI AIRPORT', 'MADRAS AIRPORT', 'CHENNAI INTERNATIONAL AIRPORT']
         }
     },
     'CZ': {
         name: 'Czech Republic',
         codes: ['CZ', 'CZE', 'CZECH REPUBLIC', 'CZECH'],
         airports: {
-            'Václav Havel Airport Prague': ['PRG', 'PRAGUE', 'VACLAV HAVEL', 'VACLAV HAVEL AIRPORT PRAGUE', 'PRAGUE AIRPORT'],
+            'VáclavHavel Airport': ['PRAGUE', 'VACLAVHAVEL', 'VACLAVHAVEL AIRPORT PRAGUE', 'PRAGUE AIRPORT'],
         }
     },
     'EE': {
         name: 'Estonia',
         codes: ['EE', 'EST', 'ESTONIA'],
         airports: {
-            'Lennart Meri Tallinn Airport': ['TLL', 'TALLINN', 'LENNART MERI', 'LENNART MERI TALLINN AIRPORT', 'TALLINN AIRPORT']
+            'LennartMeriTallinn Airport': ['TALLINN', 'LENNARTMERI', 'LENNARTMERITALLINN AIRPORT', 'TALLINN AIRPORT']
         }
     },
     'FI': {
         name: 'Finland',
         codes: ['FI', 'FIN', 'FINLAND'],
         airports: {
-            'Helsinki Airport': ['HEL', 'HELSINKI', 'VANTAA', 'HELSINKI AIRPORT', 'VANTAA AIRPORT']
+            'Helsinki Airport': ['HELSINKI', 'VANTAA', 'HELSINKI AIRPORT', 'VANTAA AIRPORT']
         }
     },
     'GR': {
         name: 'Greece',
         codes: ['GR', 'GRC', 'GREECE'],
         airports: {
-            'Athens International Airport': ['ATH', 'ATHENS', 'ELEFTHERIOS VENIZELOS', 'ATHENS INTERNATIONAL AIRPORT', 'ELEFTHERIOS VENIZELOS AIRPORT'],
-            'Thessaloniki Airport': ['SKG', 'THESSALONIKI', 'MACEDONIA', 'THESSALONIKI AIRPORT', 'MACEDONIA AIRPORT']
+            'Athens International Airport': ['ATHENS', 'ELEFTHERIOS VENIZELOS', 'ATHENS INTERNATIONAL AIRPORT', 'ELEFTHERIOSVENIZELOS AIRPORT'],
+            'Thessaloniki Airport': ['THESSALONIKI', 'MACEDONIA', 'THESSALONIKI AIRPORT', 'MACEDONIA AIRPORT']
         }
     },
     'HU': {
         name: 'Hungary',
         codes: ['HU', 'HUN', 'HUNGARY'],
         airports: {
-            'Budapest Ferenc Liszt International Airport': ['BUD', 'BUDAPEST', 'FERENC LISZT', 'BUDAPEST FERENC LISZT INTERNATIONAL AIRPORT', 'FERENC LISZT INTERNATIONAL AIRPORT'],
+            'BudapestFerencLiszt International Airport': ['BUDAPEST', 'FERENC LISZT', 'BUDAPESTFERENCLISZT INTERNATIONAL AIRPORT', 'FERENCLISZT INTERNATIONAL AIRPORT'],
         }
     },
     'IS': {
         name: 'Iceland',
         codes: ['IS', 'ISL', 'ICELAND'],
         airports: {
-            'Keflavík International Airport': ['KEF', 'KEFLAVIK', 'REYKJAVIK', 'KEFLAVIK INTERNATIONAL AIRPORT', 'REYKJAVIK AIRPORT']
+            'Keflavík International Airport': ['KEFLAVIK', 'REYKJAVIK', 'KEFLAVIK INTERNATIONAL AIRPORT', 'REYKJAVIK AIRPORT']
         }
     },
     'LV': {
         name: 'Latvia',
         codes: ['LV', 'LVA', 'LATVIA'],
         airports: {
-            'Riga International Airport': ['RIX', 'RIGA', 'RIGA INTERNATIONAL AIRPORT']
+            'Riga International Airport': ['RIGA', 'RIGA INTERNATIONAL AIRPORT']
         }
     },
     'LI': {
         name: 'Liechtenstein',
-        codes: ['LI', 'LIE', 'LIECHTENSTEIN'],
-        airports: {} // Liechtenstein does not have its own international airport
+        codes: ['LIECHTENSTEIN'],
+        airports: {} 
     },
     'LT': {
         name: 'Lithuania',
         codes: ['LT', 'LTU', 'LITHUANIA'],
         airports: {
-            'Vilnius Airport': ['VNO', 'VILNIUS', 'VILNIUS AIRPORT'],
-            'Kaunas Airport': ['KUN', 'KAUNAS', 'KAUNAS AIRPORT'],
+            'Vilnius Airport': ['VILNIUS', 'VILNIUS AIRPORT'],
+            'Kaunas Airport': ['KAUNAS', 'KAUNAS AIRPORT'],
         }
     },
     'LU': {
         name: 'Luxembourg',
         codes: ['LU', 'LUX', 'LUXEMBOURG'],
         airports: {
-            'Luxembourg Airport': ['LUX', 'LUXEMBOURG-FINDEL', 'LUXEMBOURG', 'LUXEMBOURG AIRPORT', 'LUXEMBOURG-FINDEL AIRPORT', 'FINDEL']
+            'Luxembourg Airport': ['LUXEMBOURG-FINDEL', 'LUXEMBOURG', 'LUXEMBOURG AIRPORT', 'LUXEMBOURG-FINDEL AIRPORT', 'FINDEL']
         }
     },
     'MT': {
         name: 'Malta',
         codes: ['MT', 'MLT', 'MALTA'],
         airports: {
-            'Malta International Airport': ['MLA', 'MALTA', 'MALTA INTERNATIONAL AIRPORT']
+            'Malta International Airport': ['MALTA', 'MALTA INTERNATIONAL AIRPORT']
         }
     },
     'NO': {
         name: 'Norway',
         codes: ['NO', 'NOR', 'NORWAY'],
         airports: {
-            'Oslo Airport': ['OSL', 'OSLO', 'GARDERMOEN', 'OSLO AIRPORT', 'OSLO GARDERMOEN AIRPORT']
+            'Oslo Airport': ['OSLO', 'GARDERMOEN', 'OSLO AIRPORT', 'OSLOGARDERMOEN AIRPORT']
         }
     },
     'PL': {
         name: 'Poland',
         codes: ['PL', 'POL', 'POLAND'],
         airports: {
-            'Warsaw Chopin Airport': ['WAW', 'WARSAW', 'CHOPIN', 'WARSAW CHOPIN AIRPORT', 'CHOPIN AIRPORT'],
-            'Kraków John Paul II International Airport': ['KRK', 'KRAKOW', 'KRAKÓW', 'JOHN PAUL II', 'KRAKOW AIRPORT', 'KRAKÓW JOHN PAUL II INTERNATIONAL AIRPORT', 'JOHN PAUL II INTERNATIONAL AIRPORT']
+            'WarsawChopin Airport': ['WARSAW', 'CHOPIN', 'WARSAW CHOPIN AIRPORT', 'CHOPIN AIRPORT'],
+            'Kraków International Airport': ['KRAKOW', 'KRAKÓW', 'JOHNPAULII', 'KRAKOW AIRPORT', 'KRAKÓWJOHNPAULII INTERNATIONAL AIRPORT', 'JOHNPAULII INTERNATIONAL AIRPORT']
         }
     },
     'PT': {
         name: 'Portugal',
         codes: ['PT', 'PRT', 'PORTUGAL'],
         airports: {
-            'Lisbon Airport': ['LIS', 'LISBON', 'LISBOA', 'LISBON AIRPORT', 'LISBOA AIRPORT'],
-            'Francisco Sá Carneiro Airport': ['OPO', 'PORTO', 'PORTO AIRPORT', 'FRANCISCO SÁ CARNEIRO AIRPORT']
+            'Lisbon Airport': ['LISBON', 'LISBOA', 'LISBON AIRPORT', 'LISBOA AIRPORT'],
+            'FranciscoSáCarneiroAirport': ['PORTO', 'PORTO AIRPORT', 'FRANCISCOSÁCARNEIRO AIRPORT']
         }
     },
     'SK': {
         name: 'Slovakia',
         codes: ['SK', 'SVK', 'SLOVAKIA'],
         airports: {
-            'Bratislava Airport': ['BTS', 'BRATISLAVA', 'BRATISLAVA AIRPORT']
+            'Bratislava Airport': ['BRATISLAVA', 'BRATISLAVA AIRPORT']
         }
     },
     'SI': {
         name: 'Slovenia',
         codes: ['SI', 'SVN', 'SLOVENIA'],
         airports: {
-            'Ljubljana Jože Pučnik Airport': ['LJU', 'LJUBLJANA', 'JOŽE PUČNIK', 'LJUBLJANA JOŽE PUČNIK AIRPORT', 'JOŽE PUČNIK AIRPORT']
+            'LjubljanaJožePučnik Airport': ['LJUBLJANA', 'JOŽEPUČNIK', 'LJUBLJANAJOŽEPUČNIK AIRPORT', 'JOŽEPUČNIK AIRPORT']
         }
     },
     'SE': {
         name: 'Sweden',
         codes: ['SE', 'SWE', 'SWEDEN'],
         airports: {
-            'Stockholm Arlanda Airport': ['ARN', 'STOCKHOLM', 'ARLANDA', 'STOCKHOLM ARLANDA AIRPORT', 'ARLANDA AIRPORT'],
-            'Gothenburg Landvetter Airport': ['GOT', 'GOTHENBURG', 'LANDVETTER', 'GOTHENBURG LANDVETTER AIRPORT', 'LANDVETTER AIRPORT']
+            'StockholmArlanda Airport': ['STOCKHOLM', 'ARLANDA', 'STOCKHOLM ARLANDA AIRPORT', 'ARLANDA AIRPORT'],
+            'GothenburgLandvetter Airport': ['GOTHENBURG', 'LANDVETTER', 'GOTHENBURG LANDVETTER AIRPORT', 'LANDVETTER AIRPORT']
         }
     },
     'CH': {
         name: 'Switzerland',
         codes: ['CH', 'CHE', 'SWITZERLAND', 'SCHWEIZ'],
         airports: {
-            'Zurich Airport': ['ZRH', 'ZURICH', 'ZÜRICH', 'ZURICH AIRPORT', 'ZÜRICH AIRPORT'],
-            'Geneva Airport': ['GVA', 'GENEVA', 'GENÈVE', 'GENEVA AIRPORT', 'GENÈVE AIRPORT']
+            'Zurich Airport': ['ZURICH', 'ZÜRICH', 'ZURICH AIRPORT', 'ZÜRICH AIRPORT'],
+            'Geneva Airport': ['GENEVA', 'GENÈVE', 'GENEVA AIRPORT', 'GENÈVE AIRPORT']
         }
     },
-    // New entries for China
     'CN': {
         name: 'China',
         codes: ['CN', 'CHN', 'CHINA'],
         airports: {
-            'Beijing Capital International Airport': ['PEK', 'BEIJING', 'CAPITAL', 'BEIJING CAPITAL INTERNATIONAL AIRPORT', 'PEK AIRPORT'],
-            'Shanghai Pudong International Airport': ['PVG', 'SHANGHAI', 'PUDONG', 'SHANGHAI PUDONG INTERNATIONAL AIRPORT', 'PVG AIRPORT'],
-            'Guangzhou Baiyun International Airport': ['CAN', 'GUANGZHOU', 'BAIYUN', 'GUANGZHOU BAIYUN INTERNATIONAL AIRPORT', 'CAN AIRPORT']
+            'Beijing Capital International Airport': ['BEIJING', 'CAPITAL', 'BEIJING CAPITAL INTERNATIONAL AIRPORT', 'PEK AIRPORT'],
+            'ShanghaiPudong International Airport': ['SHANGHAI', 'PUDONG', 'SHANGHAI PUDONG INTERNATIONAL AIRPORT', 'PVG AIRPORT'],
+            'GuangzhouBaiyun International Airport': ['GUANGZHOU', 'BAIYUN', 'GUANGZHOU BAIYUN INTERNATIONAL AIRPORT', 'CAN AIRPORT']
         }
     },
-    // New entries for USA
     'US': {
         name: 'United States of America',
         codes: ['US', 'USA', 'UNITED STATES', 'UNITED STATES OF AMERICA'],
         airports: {
-            'Hartsfield-Jackson Atlanta International Airport': ['ATL', 'ATLANTA', 'HARTSFIELD-JACKSON', 'HARTSFIELD-JACKSON ATLANTA INTERNATIONAL AIRPORT', 'ATL AIRPORT'],
-            'Los Angeles International Airport': ['LAX', 'LOS ANGELES', 'LAX AIRPORT', 'LOS ANGELES INTERNATIONAL AIRPORT'],
-            'O\'Hare International Airport': ['ORD', 'CHICAGO', 'O\'HARE', 'O\'HARE INTERNATIONAL AIRPORT', 'ORD AIRPORT'],
-            'Dallas/Fort Worth International Airport': ['DFW', 'DALLAS', 'FORT WORTH', 'DALLAS/FORT WORTH INTERNATIONAL AIRPORT', 'DFW AIRPORT'],
-            'Denver International Airport': ['DEN', 'DENVER', 'DENVER INTERNATIONAL AIRPORT', 'DEN AIRPORT'],
-            'John F. Kennedy International Airport': ['JFK', 'NEW YORK', 'KENNEDY', 'JOHN F. KENNEDY INTERNATIONAL AIRPORT', 'JFK AIRPORT']
+            'Hartsfield-Jackson Atlanta International Airport': ['ATLANTA', 'HARTSFIELD-JACKSON', 'HARTSFIELD-JACKSON ATLANTA INTERNATIONAL AIRPORT', 'ATL AIRPORT'],
+            'Los Angeles International Airport': ['LOS ANGELES', 'LAX AIRPORT', 'LOS ANGELES INTERNATIONAL AIRPORT'],
+            'O\'Hare International Airport': ['CHICAGO', 'O\'HARE', 'O\'HARE INTERNATIONAL AIRPORT', 'ORD AIRPORT'],
+            'Dallas/Fort Worth International Airport': ['DALLAS', 'FORT WORTH', 'DALLAS/FORT WORTH INTERNATIONAL AIRPORT', 'DFW AIRPORT'],
+            'Denver International Airport': ['DENVER', 'DENVER INTERNATIONAL AIRPORT', 'DEN AIRPORT'],
+            'John F. Kennedy International Airport': ['NEWYORK', 'KENNEDY', 'JOHNFKENNEDY INTERNATIONAL AIRPORT']
         }
     }
 
@@ -307,19 +303,6 @@ const AIRPORT_KEYWORDS = [
 ];
 
 // Helper Functions
-function createEmptyEntry(slNo: string = '1'): PassportEntry {
-    return {
-        Sl_no: slNo,
-        Country: '',
-        Airport_Name_with_location: '',
-        Arrival_Departure: '',
-        Date: '',
-        Description: '',
-        isManualEntry: true,
-        confidence: 0,
-        StampImage: ''
-    };
-}
 
 function normalizeText(text: string): string {
     return text
@@ -426,11 +409,9 @@ function detectCountry(text: string): { country: string; confidence: number } {
         'ZÜRICH': 'Switzerland',
         'GENEVA': 'Switzerland',
         'GENÈVE': 'Switzerland',
-        //Additions for China
         'BEIJING': 'China',
         'SHANGHAI': 'China',
         'GUANGZHOU': 'China',
-        //Additions for USA
         'ATLANTA': 'United States of America',
         'LOS ANGELES': 'United States of America',
         'CHICAGO': 'United States of America',
@@ -525,19 +506,6 @@ function detectAirport(blocks: string[], country: string): { airport: string; co
         };
     }
 
-    return {
-        airport: 'Unknown International Airport',
-        confidence: 0.3
-    };
-}
-
-function defaultAirport(country: string): { airport: string; confidence: number } {
-    if (country === 'India') {
-        return {
-            airport: 'Chhatrapati Shivaji International Airport',
-            confidence: 0.5
-        };
-    }
     return {
         airport: 'Unknown International Airport',
         confidence: 0.3
@@ -1064,6 +1032,83 @@ export const getPassportUserHistoryForMap = async (
        console.error('Error getting user passport history for map:', error);
        res.status(500).json({ message: 'Internal Server Error', error: error.message });
    }
+};
+
+export const getWordCloudData = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const userId = req.user?._id;
+        if (!userId) {
+            res.status(401).json({ message: 'Unauthorized: User ID not found in request' });
+            return;
+        }
+
+        const passportEntries = await Passport.find({ user: userId });
+        console.log("Total passport entries found:", passportEntries.length);
+
+        const wordMap = new Map<string, number>();
+        const excludeWords = ['AIRPORT', 'INTERNATIONAL', 'CAPITAL', 'THE', 'AND', 'FOR', 'WITH'];
+        
+        // Log all airport names before processing
+        console.log("All Airport Names:");
+        passportEntries.forEach(entry => {
+            console.log("Airport Name:", entry.Airport_Name_with_location);
+        });
+
+        passportEntries.forEach(entry => {
+            const locationText = entry.Airport_Name_with_location.toUpperCase();
+            console.log("Processing location:", locationText);
+
+            // Specifically check for Mumbai
+            if (locationText.includes('MUMBAI')) {
+                console.log("Found Mumbai in:", locationText);
+                const count = (wordMap.get('MUMBAI') || 0) + 3;
+                wordMap.set('MUMBAI', count);
+                console.log("Mumbai count:", count);
+            }
+
+            const words = locationText
+                .split(' ')
+                .map(word => word.trim())
+                .filter(word => 
+                    word.length > 0 && 
+                    !excludeWords.includes(word)
+                );
+            
+            console.log("Processed words:", words);
+
+            words.forEach(word => {
+                if (word) {
+                    const count = (wordMap.get(word) || 0) + 2;
+                    wordMap.set(word, count);
+                }
+            });
+        });
+
+        // Log the word map before converting to array
+        console.log("Final Word Map:", Object.fromEntries(wordMap));
+
+        const wordsArray = Array.from(wordMap.entries())
+            .map(([text, value]) => ({ text, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 50);
+
+        console.log("Final words array:", wordsArray);
+
+        res.status(200).json({
+            success: true,
+            data: wordsArray
+        });
+    } catch (error: any) {
+        console.error('Error generating word cloud data:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Failed to generate word cloud data',
+            error: error.message 
+        });
+    }
 };
 
 // In your backend controller file (e.g., passportController.ts)
